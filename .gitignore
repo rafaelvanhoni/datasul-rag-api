@@ -1,0 +1,25 @@
+# Ambientes Virtuais e Cache do Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Configurações Locais e Chaves
+.env
+
+# Pastas de Documentos e Corporas (Segurança de Dados)
+docs/
+corpus/
+*.xlsx
+*.pdf
+*.md
+!README.md
+!cronograma.md
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
