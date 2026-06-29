@@ -28,11 +28,11 @@ A topologia foi desenhada para simular um cenário de produção híbrido (Edge/
 ┌─────────────────────────────────────────────────────────────────────┐
 │  DELL INSPIRON (Servidor de Laboratório / Linux Mint XFCE)          │
 │                                                                     │
-│  ┌─────────────────────────────┐  ┌────────────────────────────┐   │
-│  │  PostgreSQL 16 + pgvector   │  │  Ollama Server             │   │
-│  │  (Docker Container)         │  │  ├── bge-m3 (Embeddings)   │   │
-│  └─────────────────────────────┘  │  └── qwen2.5:3b (LLM)     │   │
-│                                   └────────────────────────────┘   │
+│  ┌─────────────────────────────┐  ┌────────────────────────────┐    │
+│  │  PostgreSQL 16 + pgvector   │  │  Ollama Server             │    │
+│  │  (Docker Container)         │  │  ├── bge-m3 (Embeddings)   │    │
+│  └─────────────────────────────┘  │  └── qwen2.5:3b (LLM)      │    │
+│                                   └────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -199,7 +199,7 @@ POSTGRES_PASSWORD=<SENHA>
 - [x] Container PostgreSQL migrado para pgvector
 - [x] Correção de collation mismatch no cluster Postgres
 - [x] Homologação de conectividade ponta a ponta
-- [ ] Modelagem do banco vetorial via SQLAlchemy
+- [x] Modelagem do banco vetorial via SQLAlchemy
 - [ ] Pipeline de chunking para PDF e Markdown
 - [ ] Endpoints `/ingest` e `/query`
 - [ ] Busca por similaridade com operador `<=>`
