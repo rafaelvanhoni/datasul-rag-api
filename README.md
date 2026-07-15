@@ -30,7 +30,7 @@ A topologia foi desenhada para simular um cenário de produção híbrido (Edge/
 │                                                                     │
 │  ┌─────────────────────────────┐  ┌────────────────────────────┐    │
 │  │  PostgreSQL 16 + pgvector   │  │  Ollama Server             │    │
-│  │  (Docker Container)         │  │  ├── bge-m3 (Embeddings)   │    │
+│  │  (Docker Container)         │  │  ├── nomic-embed (768d)    │    │
 │  └─────────────────────────────┘  │  └── qwen2.5:3b (LLM)      │    │
 │                                   └────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────┘
@@ -69,7 +69,7 @@ O projeto documenta e implementa na prática os fundamentos de um sistema RAG de
 | **Banco Vetorial** | PostgreSQL 16 + pgvector | Persistência e busca por similaridade |
 | **Orquestração** | Docker / docker-compose | Gerenciamento do container de banco de dados |
 | **Runtime de IA** | Ollama | Servidor local de modelos de linguagem |
-| **Embeddings** | bge-m3 | Modelo multilíngue de alta fidelidade para português |
+| **Embeddings** | nomic-embed-text | Modelo leve (768 dims), viável em CPU doméstica |
 | **LLM** | qwen2.5:3b-instruct | Geração de respostas com baixo consumo de RAM |
 | **HTTP Client** | httpx | Chamadas assíncronas ao servidor Ollama remoto |
 | **VPN** | Tailscale | Malha de rede privada entre as duas máquinas |
@@ -82,27 +82,21 @@ O projeto documenta e implementa na prática os fundamentos de um sistema RAG de
 datasul-rag-api/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py          # Ponto de entrada do FastAPI
-│   ├── config.py        # Configurações e variáveis de ambiente
-│   ├── database.py      # Conexão assíncrona com o Postgres (SQLAlchemy)
-│   ├── models.py        # Modelos de tabela com suporte a vetores (pgvector)
-│   ├── schemas.py       # Contratos de entrada e saída da API (Pydantic)
-│   ├── routers/
-│   │   ├── __init__.py
-│   │   ├── ingest.py    # Endpoint de ingestão e indexação de documentos
-│   │   └── query.py     # Endpoint de consulta semântica ao RAG
-│   └── services/
-│       ├── __init__.py
-│       ├── ollama.py    # Comunicação assíncrona com o servidor Ollama
-│       └── vector_db.py # Operações vetoriais (inserção e busca por similaridade)
-├── corpus/
-│   ├── publico/         # Amostras de documentação técnica para teste e demonstração
-│   └── proprio/         # Exemplos e casos de uso em Progress 4GL / ABL
+│   ├── main.py          # FastAPI + endpoint /query (busca vetorial + LLM)
+│   ├── config.py        # Configurações via pydantic-settings (lê o .env)
+│   ├── database.py      # Engine e sessão assíncrona (SQLAlchemy 2.0)
+│   └── models.py        # DocumentoChunk com coluna vetorial (pgvector)
+├── corpus/              # Documentação a indexar (local — não versionado por conter material de terceiros)
+├── ingestao.py          # Pipeline de ingestão: chunking + embeddings + gravação
+├── criar_tabelas.py     # Bootstrap do schema no PostgreSQL
+├── docker-compose.yml   # PostgreSQL + pgvector
 ├── .env                 # Variáveis de ambiente locais (não versionado)
 ├── .env.example         # Template de configuração para novos ambientes
 ├── requirements.txt
 └── .gitignore
 ```
+
+> 🔧 **Refatoração planejada:** extrair `routers/`, `services/` e `schemas.py` conforme a API cresce — ver seção *Evolução do Projeto*.
 
 ---
 
@@ -112,7 +106,7 @@ datasul-rag-api/
 
 - Python 3.13+
 - Docker e docker-compose (para o PostgreSQL)
-- Servidor Ollama acessível na rede (local ou via VPN) com `bge-m3` e `qwen2.5:3b` instalados
+- Servidor Ollama acessível na rede (local ou via VPN) com `nomic-embed-text` e `qwen2.5:3b` instalados
 - Arquivo `.env` configurado (ver `.env.example`)
 
 ### Passo a passo
@@ -162,10 +156,10 @@ O arquivo `.env` (não versionado) deve conter:
 # Servidor Ollama (IP Tailscale ou localhost)
 OLLAMA_BASE_URL=http://<IP_DO_SERVIDOR>:11434
 
-# PostgreSQL
-POSTGRES_HOST=<HOST_DO_BANCO>
-POSTGRES_PORT=5432
-POSTGRES_DB=datasul_rag
+# String de conexão assíncrona usada pela aplicação (SQLAlchemy + asyncpg)
+DATABASE_URL=postgresql+asyncpg://<USUARIO>:<SENHA>@<HOST_DO_BANCO>:5432/datasul_rag
+
+# Usadas pelo docker-compose ao criar o container do PostgreSQL
 POSTGRES_USER=<USUARIO>
 POSTGRES_PASSWORD=<SENHA>
 ```
@@ -178,7 +172,7 @@ POSTGRES_PASSWORD=<SENHA>
 - **100% local e privado:** nenhum dado trafega para serviços externos. Modelos de IA rodam inteiramente na CPU do servidor de laboratório via Ollama.
 - **asyncpg sobre psycopg2:** driver não-bloqueante essencial para não travar o event loop do Uvicorn durante queries ao banco vetorial.
 - **httpx sobre requests:** mesmo princípio — chamadas ao Ollama devem ser `await`áveis para manter a concorrência do FastAPI.
-- **bge-m3 para embeddings:** escolhido pela alta fidelidade semântica em português, essencial para documentação técnica em língua nativa.
+- **nomic-embed-text para embeddings:** modelo leve (768 dimensões) que roda com folga em CPU. O upgrade para bge-m3 (1024 dims, maior fidelidade em português) está planejado — exige migrar a coluna vetorial e re-ingerir o corpus, por isso é uma evolução consciente e não o ponto de partida.
 - **qwen2.5:3b-instruct para geração:** equilíbrio entre qualidade de resposta e viabilidade de execução em CPU doméstica.
 - **pgvector sobre ChromaDB:** aproveita infraestrutura PostgreSQL já existente e elimina dependência de um banco vetorial separado.
 
@@ -200,11 +194,17 @@ POSTGRES_PASSWORD=<SENHA>
 - [x] Correção de collation mismatch no cluster Postgres
 - [x] Homologação de conectividade ponta a ponta
 - [x] Modelagem do banco vetorial via SQLAlchemy
-- [ ] Pipeline de chunking para PDF e Markdown
-- [ ] Endpoints `/ingest` e `/query`
-- [ ] Busca por similaridade com operador `<=>`
-- [ ] Prompt engineering com blindagem contra alucinações
-- [ ] Tratamento robusto de erros e refatoração SOLID
+- [x] Pipeline de ingestão (script) com chunking básico e sobreposição de contexto
+- [x] Busca por similaridade com operador `<=>`
+- [x] Endpoint `/query` com resposta fundamentada e citação de fontes
+- [x] Prompt engineering com blindagem contra alucinações
+- [ ] Refatoração em camadas (`routers/`, `services/`, `schemas.py`)
+- [ ] Chunking consciente de estrutura (Markdown/PDF)
+- [ ] Endpoint `/ingest` (upload de documentos)
+- [ ] Health check real (banco + Ollama) e tratamento robusto de erros
+- [ ] Testes automatizados (pytest)
+- [ ] Upgrade de embeddings para bge-m3 (migração da coluna vetorial + re-ingestão)
+- [ ] Provider de LLM configurável (Ollama local ↔ API externa)
 
 ---
 
