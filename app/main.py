@@ -69,7 +69,8 @@ async def consultar_rag(request: QueryRequest, db: AsyncSession = Depends(get_db
         vetor_pergunta = await gerar_embedding_pergunta(request.pergunta)
 
         # 2. Efetua a busca vetorial usando o operador de distância do cosseno (<=>)
-        # Buscando os 3 blocos mais relevantes para compor o contexto
+        # Buscando os 2 blocos mais relevantes para compor o contexto (top-k baixo
+        # por causa da janela de contexto limitada do modelo 3B rodando em CPU)
         query_vetorial = text("""
             SELECT conteudo, nome_arquivo
             FROM documentos_chunks
